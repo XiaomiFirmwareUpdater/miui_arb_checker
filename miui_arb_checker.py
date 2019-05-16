@@ -24,12 +24,17 @@ def check_file():
     if not path.isfile(argv[1]):
         print("The file provided does not exist!")
         exit(0)
-    if 'zip' in argv[1]:
+    if '.zip' in argv[1]:
         file_type = 'zip'
-    elif 'tgz' in argv[1]:
+    elif '.tgz' in argv[1]:
         file_type = 'tgz'
+    elif '.sh' in argv[1] or '.bat' in argv[1]:
+        file_type = 'sh'
+    elif 'xbl' in argv[1]:
+        file_type = 'xbl'
     else:
-        print('ROM to check must be ZIP or TAR only!')
+        print('The file to check must be Recovery / Fastboot ROM, XBL file, '
+              'or .sh flashing script!')
         exit(0)
     return file_type
 
@@ -55,39 +60,65 @@ def extract_tar(file):
     :param file: miui tgz
     """
     with tarfile.open(file, 'r') as tar_file:
-        for i in glob("*/flash_all.sh"):
-            tar_file.extractall('tmp', members=[tar_file.getmember(i)])
-            print('flashing script extracted successfully.')
+        files = [i for i in tar_file.getnames() if 'flash_all.sh' in i][0]
+        tar_file.extractall('tmp', members=[tar_file.getmember(files)])
+        print('flashing script extracted successfully.')
 
 
-def check_xbl():
+def get_arb_number(xbl):
+    """
+    check the current ARB number in xbl strings
+    :param xbl: bootloader file
+    """
+    with open(xbl, "rb") as binary_file:
+        data = codecs.decode(binary_file.read(), 'ascii', errors='ignore')
+    arb = [i for i in re.findall(r"0000000[0-9]00000000", data)
+           if i != '0000000000000000'][0]
+    if not arb:
+        print('No ARB detected!')
+    else:
+        print('ARB index is: ' + arb.replace('0', ''))
+        print('Note: sometimes this can be inaccurate!\n'
+              'Be sure to check curring anti number using fastboot or from XDA/MIUI forum.')
+
+
+def check_xbl(file_type):
     """
     check anti-rollback index in bootloader
     """
-    for xbl in glob("tmp/firmware-update/xbl.*"):
-        with open(xbl, "rb") as binary_file:
-            data = codecs.decode(binary_file.read(), 'ascii', errors='ignore')
-            arb = [i for i in re.findall(r"0000000[0-9]00000000", data)
-                   if i != '0000000000000000'][0]
-            if not arb:
-                print('No ARB detected!')
-            else:
-                print('ARB index is: ' + arb.replace('0', ''))
-                print('Note: sometimes this can be inaccurate!\n'
-                      'Be sure to check using fastboot or XDA/MIUI forum')
+    file_path = ''
+    if file_type == 'zip':
+        file_path = "tmp/firmware-update/xbl.*"
+    elif file_type == 'xbl':
+        file_path = "xbl.*"
+    for xbl in glob(file_path):
+        get_arb_number(xbl)
 
 
-def check_flash_script():
+def read_arb_number(file):
+    """
+    read the current ARB number from shell flashing script
+    :param file: flashing script file
+    """
+    with open(file, 'r') as script:
+        arb = [i for i in script if 'CURRENT_ANTI_VER=' in i][0]
+        if not arb:
+            print('No ARB detected!')
+        else:
+            print('ARB index is: ' + arb.split('=')[1])
+
+
+def check_flash_script(file_type):
     """
     check anti-rollback index in fastboot flashing script
     """
-    for file in glob("tmp/*/flash_all.sh"):
-        with open(file, 'r') as script:
-            arb = [i for i in script if 'CURRENT_ANTI_VER=' in i][0]
-            if not arb:
-                print('No ARB detected!')
-            else:
-                print('ARB index is: ' + arb.split('=')[1])
+    file_path = ''
+    if file_type == 'tgz':
+        file_path = "tmp/*/flash_all.sh"
+    elif file_type == 'sh':
+        file_path = "flash_*.sh"
+    for file in glob(file_path):
+        read_arb_number(file)
 
 
 def main():
@@ -100,11 +131,17 @@ def main():
     if file_type == 'zip':
         print('Checking ARB from Recovery ROM')
         extract_zip(file)
-        check_file()
+        check_xbl(file_type)
     elif file_type == 'tgz':
         print('Checking ARB from Fastboot ROM')
         extract_tar(file)
-        check_flash_script()
+        check_flash_script(file_type)
+    elif file_type == 'sh':
+        print('Checking ARB from Fastboot Flashing Script')
+        check_flash_script(file_type)
+    elif file_type == 'xbl':
+        print('Checking ARB from XBL file')
+        check_xbl(file_type)
     else:
         print("Something went wrong!")
     rmtree("tmp/")
