@@ -72,8 +72,11 @@ def get_arb_number(xbl):
     """
     with open(xbl, "rb") as binary_file:
         data = codecs.decode(binary_file.read(), 'ascii', errors='ignore')
-    arb = [i for i in re.findall(r"0000000[0-9]00000000", data)
-           if i != '0000000000000000'][0]
+    try:
+        arb = [i for i in re.findall(r"0000000[0-9]00000000", data)
+               if i != '0000000000000000'][0]
+    except IndexError:
+        arb = []
     if not arb:
         print('No ARB detected!')
     else:
